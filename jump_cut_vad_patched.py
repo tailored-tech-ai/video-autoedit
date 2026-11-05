@@ -343,23 +343,26 @@ def add_padding(segments: list[tuple[float, float]], padding_s: float, duration:
     return merged
 
 
+SCALE_FILTER = None  # e.g. "scale=2560:1440:flags=lanczos"
+SPEED = 1.0  # >1 ускоряет: setpts для видео, atempo для звука (тембр голоса не меняется)
+OUTPUT_FPS = None  # частота исходника, задаётся вместе со SPEED
+
+
 def build_audio_filter_chain(enhance: bool = False) -> str:
     """Build FFmpeg audio filter chain for voice enhancement."""
-    if not enhance:
-        return ""
-
-    filters = [
-        AUDIO_FILTERS["highpass"],
-        AUDIO_FILTERS["lowpass"],
-        AUDIO_FILTERS["warmth"],
-        AUDIO_FILTERS["presence"],
-        AUDIO_FILTERS["compression"],
-        AUDIO_FILTERS["loudnorm"],
-    ]
+    filters = []
+    if SPEED != 1.0:
+        filters.append(f"atempo={SPEED}")
+    if enhance:
+        filters += [
+            AUDIO_FILTERS["highpass"],
+            AUDIO_FILTERS["lowpass"],
+            AUDIO_FILTERS["warmth"],
+            AUDIO_FILTERS["presence"],
+            AUDIO_FILTERS["compression"],
+            AUDIO_FILTERS["loudnorm"],
+        ]
     return ",".join(filters)
-
-
-SCALE_FILTER = None  # e.g. "scale=2560:1440:flags=lanczos"
 
 
 def build_video_filter_chain(lut_path: str = None) -> str:
@@ -371,6 +374,11 @@ def build_video_filter_chain(lut_path: str = None) -> str:
 
     if lut_path:
         filters.append(f"lut3d='{lut_path}':interp=trilinear")
+
+    if SPEED != 1.0:
+        filters.append(f"setpts=PTS/{SPEED}")
+        if OUTPUT_FPS:
+            filters.append(f"fps={OUTPUT_FPS}")  # постоянная частота после ускорения
 
     return ",".join(filters) if filters else ""
 
@@ -395,11 +403,13 @@ def encode_single_segment(args: tuple) -> tuple[int, str]:
     # Use -to instead of -t to specify exact end point
     # Input-seek (before -i) instead of output-seek: avoids decoding the whole
     # file from 0 for every segment. Verified frame-accurate on this source.
+    # -t тоже до -i: ограничивает чтение исходника. После -i он ограничивал бы выход,
+    # и при SPEED > 1 сегмент дочитывал бы чужой хвост (паузу и начало следующей фразы).
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start),
-        "-i", input_path,
         "-t", str(duration),
+        "-i", input_path,
     ]
 
     if video_filter:

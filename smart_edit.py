@@ -221,6 +221,8 @@ def main():
     p.add_argument("--no-keep-start", action="store_false", dest="keep_start", default=True)
     p.add_argument("--enhance-audio", action="store_true")
     p.add_argument("--scale", default=None, help="например 2560:1440")
+    p.add_argument("--speed", type=float, default=1.0,
+                   help="ускорение в том же рендере, 1.1 = плюс 10%% (тембр голоса не меняется)")
     p.add_argument("--apply-lut", default=None)
     p.add_argument("--workers", type=int, default=4)
 
@@ -228,6 +230,13 @@ def main():
 
     if args.scale:
         jc.SCALE_FILTER = f"scale={args.scale}:flags=lanczos"
+    if not 0.5 <= args.speed <= 2.0:
+        print("❌ --speed должен быть от 0.5 до 2.0 (предел atempo)")
+        return 1
+    jc.SPEED = args.speed
+    jc.OUTPUT_FPS = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=r_frame_rate",
+         "-of", "default=nw=1:nk=1", args.input], capture_output=True, text=True).stdout.strip() or None
 
     duration = jc.get_duration(args.input)
     print(f"🎬 {Path(args.input).name}  —  {fmt(duration)}")
@@ -306,6 +315,8 @@ def main():
     print(f"Исходник:        {fmt(duration)}")
     print(f"Только тишина:   {fmt(sum(b-a for a,b in segments))}")
     print(f"С резом дублей:  {fmt(total)}   ({len(kept)} сегментов)")
+    if args.speed != 1.0:
+        print(f"После x{args.speed}:    {fmt(total / args.speed)}")
     print(f"{'─'*58}")
 
     # --- склейки: как прочитается шов

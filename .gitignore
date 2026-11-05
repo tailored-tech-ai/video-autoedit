@@ -4,3 +4,4 @@ __pycache__/
 *.mov
 *.wav
 .DS_Store
+tight_publish.local.json
